@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>expand triangle</title>
+    <style>
+        head, body{
+            width:100%;
+            height:100%;
+            overflow: hidden;
+            top:0;
+            left:0;
+            margin:0;
+            padding:0;
+        }
+    </style>
+
+    <script src="utils/Point.js"></script>
+    <script src="utils/bisector.js"></script>
+    <script src="utils/offsetPolygon.js"></script>
+    <script src="utils/lineIntersection.js"></script>
+    <script src="utils/segmentInterscetion.js"></script>
+
+</head>
+<body>
+
+<script src="utils/canvas.js"></script>
+<script>
+
+    function renderPoly( poly ){
+        if( poly.points.length < 2 )return;
+//        ctx.clearRect( 0,0,w,h );
+        poly.edges.forEach( function(e, i){
+
+            var i0 = e[0];
+            var i1 = e[1];
+
+            var p0 = poly.points[ i0 ];
+            var p1 = poly.points[ i1 ];
+            if( p0.last != null ){
+
+//                console.log( p0.last )
+//                ctx.beginPath();
+//                ctx.moveTo( p0.x, p0.y );
+//                ctx.lineTo( p0.last.x, p0.last.y );
+//                ctx.stroke();
+
+            }
+
+            ctx.beginPath();
+            ctx.moveTo( p0.x, p0.y );
+            ctx.lineTo( p1.x, p1.y );
+            ctx.stroke();
+
+//            ctx.fillStyle = "#000";
+//            ctx.globalAlpha = 1;
+//            ctx.fillText( i0, p0.x, p0.y );
+//            ctx.fillText( i1, p1.x, p1.y );
+//
+//            ctx.fillText( "e " + i,
+//                    ( p0.x + p1.x ) * .5,
+//                    ( p0.y + p1.y ) * .5 );
+
+        });
+    }
+
+
+    function split( polygon, hasSplit ) {
+
+        var points = polygon.points;
+        var edges = polygon.edges;
+
+        var count = edges.length;
+        if( count <= 3 )return [polygon];
+
+        var newEdges = [];
+
+        for (var i = 0; i < count; i++) {
+
+            var i0 = edges[ i ][0];
+            var i1 = edges[ i ][1];
+
+            var p0 = points[i0];
+            var p1 = points[i1];
+
+            if( p0 == undefined || p1 == undefined )continue;
+            for (var j = 0; j < count; j++) {
+
+                if( i == j )continue;
+
+                var i2 = edges[ j ][0];
+                var i3 = edges[ j ][1];
+
+                var p2 = points[i2];
+                var p3 = points[i3];
+
+                //if there is an intersection we have to recomputes the Planar Straight Line Graph (PSLG)
+                // the PSLG is a graph with no intersections
+                var ip = SegmentIntersection( p0, p1, p2, p3 );
+                if( ip ){
+
+                    ip.isIntersect = true;
+
+                    var id = points.length;
+                    newEdges.push( [ i, [ i0,id ], [id, i1] ] );
+                    newEdges.push( [ j, [ i2,id ], [id, i3] ] );
+                    points.push( ip );
+
+                    var tmpEdges = [];
+                    for( var k = 0; k < count; k++ ){
+
+                        //if this edges was not marked for deletion
+                        if( k == i || k == j ){
+
+                            //this edge must be replaced by the 2 new edges
+                            newEdges.forEach( function( newEdge ){
+
+                                //find the 2 new edges by their index
+                                if( newEdge[0] == k ){
+                                    tmpEdges.push( newEdge[1], newEdge[2] );
+                                }
+
+                            });
+                        }else{
+                            //otherwise keep it
+                            tmpEdges.push( edges[k] );
+                        }
+                    }
+                    //bail out and process the new edges
+                    polygon.points = points;
+                    polygon.edges = tmpEdges;
+                    return split( polygon, true );
+                }
+            }
+        }
+
+        //there was an edge split, we need to rebuild some polygons
+        if( Boolean( hasSplit ) === true ) {
+
+            var invalid = [];
+            points.forEach(function (p, i) {
+
+                //create an array of the edges connected to the points
+                p.connexions = [];
+                edges.forEach(function (e, edgeId) {
+
+                    //stores the ID of other endpoint of the edge and the edge
+                    if (e[0] == i) p.connexions.push([e[1], e]);
+                    if (e[1] == i) p.connexions.push([e[0], e]);
+
+                });
+
+                //marks a point for deletion
+                if (!p.isIntersect) {
+
+                    //this point is linked to exactly 2 intersection points
+                    if (p.connexions.length == 2
+                    && points[p.connexions[0][0]].isIntersect
+                    && points[p.connexions[1][0]].isIntersect) {
+
+
+                        //this is part of the solution
+                        var p0 = points[p.connexions[0][0]];
+                        var p1 = points[p.connexions[1][0]];
+
+                        var center = p0.clone().add( p1 ).multiplyScalar( .5 );
+
+                        appendToSolution( center, p.origin );
+                        appendToSolution( center, p0 );
+                        appendToSolution( center, p1 );
+
+//                        ctx.strokeStyle = "#000";
+//                        ctx.beginPath();
+//                        ctx.moveTo( center.x, center.y );
+//                        ctx.lineTo( p.origin.x, p.origin.y );
+//
+//                        ctx.moveTo( center.x, center.y );
+//                        ctx.lineTo( p0.x, p0.y );
+//
+//                        ctx.moveTo( center.x, center.y );
+//                        ctx.lineTo( p1.x, p1.y );
+//                        ctx.stroke();
+
+                        //stores the invalid edges ids
+                        invalid.push(p.connexions[0][1], p.connexions[1][1]);
+
+                    }
+
+                } else {
+
+                    //removes the edge connecting 2 intersection points
+                    p.connexions.forEach(function (co) {
+                        if (points[co[0]].isIntersect) {
+                            invalid.push(co[1]);
+                        }
+                    });
+                }
+            });
+
+            //rebuilds graph with the new points and edges
+            newEdges = [];
+            edges.forEach(function (e, i) {
+                if (invalid.indexOf(e) == -1) {
+                    newEdges.push(e);
+                }
+            });
+
+            //rebuilds points connexity list
+            points.forEach(function (p, i) {
+                p.visited = false;
+                newEdges.forEach(function (e) {
+                    if (e[0] == i ) {
+                        p.next = points[e[1]];
+                        p.edge = e;
+                    }
+                });
+            });
+
+            return splitPolygons( points, newEdges );
+        }
+
+        //no need to subdivide this polygon
+        return [ polygon ];
+
+    }
+
+    function splitPolygons( points, edges, newPolygons ){
+
+        newPolygons = newPolygons || [];
+
+        var edge = edges.shift();
+        var start = points[ edge[0] ];
+        start.visited = true;
+
+        var poly = [start.edge ];
+        var max = 0;
+        var valid = true;
+        while( start != null && max++ < 100 ){
+
+            if( start.next == null ){
+                valid = false;
+                break;
+            }
+
+            if( start.next.visited == false ){
+                start.next.visited = true;
+                start = start.next;
+                poly.push( start.edge );
+            }
+        }
+
+        if( valid )newPolygons.push( poly );
+
+        var remainingEdges = [];
+        edges.forEach(function( e, edgeId ){
+            if( poly.lastIndexOf(e) == -1 ){
+                remainingEdges.push( e );
+            }
+        });
+
+        if( remainingEdges.length > 0 ){
+            return splitPolygons( points, remainingEdges, newPolygons );
+        }
+
+        var polygons = [];
+        newPolygons.forEach( function( poly ){
+
+            var tmpPoints = [];
+            poly.forEach( function( edge ){
+                if( tmpPoints.indexOf( points[ edge[0] ] ) == -1 )tmpPoints.push( points[ edge[0] ]);
+                if( tmpPoints.indexOf( points[ edge[1] ] ) == -1 )tmpPoints.push( points[ edge[1] ]);
+            } );
+
+            var tmpEdges = [];
+            tmpPoints.forEach(function (p, i) {tmpEdges.push( [i, (i+1)%tmpPoints.length ]);});
+            polygons.push( new Polygon( tmpPoints, tmpEdges ) );
+
+        });
+        return polygons;
+
+    }
+
+    function collapse( polygon ) {
+
+        var points = polygon.points;
+        var count = points.length;
+
+        if( count <= 3 ){
+            var ip = LineIntersection( points[0].last, points[0], points[1].last, points[1] );
+            points.forEach( function( p ) {
+                appendToSolution( ip, p.origin );
+            });
+            return null;
+        }
+
+        //check if the polygon is still valid
+        var valid = true;
+        var edges = polygon.edges;
+        for (var i = 0; i < edges.length; i++ ) {
+
+            var i0 = edges[ i ][0];
+            var i1 = edges[ i ][1];
+
+            var cur = polygon.points[i0];
+            var nex = polygon.points[i1];
+
+            if( cur == undefined || nex == undefined ){
+                console.log( "fuck", i0, i1, polygon.points.length );
+                return null
+            }
+
+            //checks the before / after edge direction
+            var d0 = cur.last.direction( nex.last );
+            var d1 = cur.direction( nex );
+
+            //if they're heading in opposite directions,
+            // the edge was flipped during the last offset and must be deleted
+            if( d0.dot( d1 ) < 0 ){
+                valid = false;
+//                break;
+            }
+        }
+
+        if( !valid ){
+
+            var tmp = [];
+            for (var i = 0; i < edges.length; i++ ) {
+
+                i0 = edges[ i ][0];
+                i1 = edges[ i ][1];
+
+                cur = polygon.points[i0];
+                nex = polygon.points[i1];
+
+                ip = SegmentIntersection( cur, cur.last, nex, nex.last );
+                if( ip ){
+
+                    appendToSolution( ip, cur.origin );
+                    appendToSolution( ip, nex.origin );
+
+                    ip.last = new Point();
+                    ip.last.x = cur.x;
+                    ip.last.y = cur.y;
+                    tmp.push( ip );
+
+                }else{
+                    tmp.push( cur );
+                }
+
+            }
+
+            if( tmp.length <= 2 )return null;
+
+            //rebuilds edges
+            polygon.edges = [];
+            tmp.forEach(function (p, i) {
+                polygon.edges.push( [i, (i+1)%points.length ]);
+            });
+            polygon.points = tmp;
+
+
+//            console.log( "new edges?", polygon.edges.length, polygon.edges, polygon.points )
+            return polygon;
+
+        }else{
+            return polygon;
+        }
+    }
+
+    function appendToSolution( p0, p1 ){
+
+        var count = solution.points.length;
+        solution.points.push( p0, p1)
+        solution.edges.push( [count, count+1 ] )
+
+    }
+
+    var points = [new Point(274, 192 ),new Point(991, 178 ),new Point(781, 690 ),new Point(574, 390 ),new Point(294, 667 )];
+//    var points = [new Point(353, 120 ),new Point(475, 381 ),new Point(646, 165 ) ,new Point(874, 164 ),new Point(899, 500 ),new Point(730, 390 ),new Point(482, 591 ),new Point(220, 600 ),new Point(205, 326 )];
+    var points = [new Point(204, 325 ),new Point(351, 118 ),new Point(474, 377 ),new Point(644, 165 ),new Point(874, 166 ),new Point(911, 608 ),new Point(1123, 613 ),new Point(1244, 489 ),new Point(1176, 303 ),new Point(1303, 190 ),new Point(1443, 356 ),new Point(1403, 659 ),new Point(1161, 842 ),new Point(732, 851 ),new Point(805, 698 ),new Point(445, 689 ),new Point(625, 475 ),new Point(219, 596 )];
+
+    var polyDef = [129.5,950,129.5,725,0.5,725,0.5,298,201.5,298,201.5,575,338.5,575,338.5,380,498.5,380,498.5,149,647,149,647,0.5,946,0.5,946,299.5,797.5,299.5,797.5,448,599.5,448,599.5,611,757.5,611,757.5,794,522.5,794,522.5,688,446.5,688,446.5,950];
+    var polyDef = [0.5,408,0.5,136,136,136,136,0.5,408,0.5,408,272.5,272.5,272.5,272.5,408];
+    var polyDef = [409,138.5,409,0.5,136,0.5,136,136,0.5,136,0.5,409,138.5,409,138.5,547,411.5,547,411.5,411.5,547,411.5,547,138.5];
+    points = [];
+
+//    for( var i = 0; i < polyDef.length; i+=2 ){
+//        points.push( new Point( polyDef[ i ] * .8 + 100,
+//                                polyDef[i+1] * .8 + 100));
+//    }
+//    points.reverse()
+    points = [new Point(679, 193 ),new Point(847, 411 ),new Point(875, 380 ),new Point(812, 273 ),new Point(815, 259 ),new Point(822, 255 ),new Point(841, 260 ),new Point(839, 276 ),new Point(849, 309 ),new Point(950, 362 ),new Point(985, 275 ),new Point(972, 186 ),new Point(985, 167 ),new Point(1012, 181 ),new Point(1003, 206 ),new Point(1004, 251 ),new Point(1005, 331 ),new Point(982, 385 ),new Point(1020, 441 ),new Point(1047, 372 ),new Point(1072, 334 ),new Point(1093, 257 ),new Point(1091, 177 ),new Point(1091, 153 ),new Point(1115, 144 ),new Point(1121, 157 ),new Point(1123, 176 ),new Point(1115, 215 ),new Point(1109, 293 ),new Point(1094, 379 ),new Point(1039, 495 ),new Point(1016, 536 ),new Point(919, 541 ),new Point(813, 526 ),new Point(751, 453 ),new Point(808, 430 ),new Point(700, 334 ),new Point(603, 277 ),new Point(575, 225 ),new Point(612, 216 ),new Point(655, 242 ),new Point(636, 160 ),new Point(659, 148 )];
+
+    /*
+    points = [];
+    var r = 150;
+    var count = 6;
+    var step = Math.PI * 2 / count;
+    for( var i = 0; i < count; i++ ){
+        var dir = 1;//.5 + ( ( i%2!=0 ) ? 1 :0 );
+        console.log( dir )
+        points.push( new Point(
+                w / 2 + Math.cos( i * step ) * r * dir,
+                h / 2 + Math.sin( i * step ) * r * dir
+        ));
+    }
+    //*/
+
+//    ctx.beginPath();
+//    points.forEach(function (v) {ctx.lineTo(v.x, v.y);});
+//    ctx.closePath();
+//    ctx.stroke();
+
+
+
+
+    var edges = [];
+    ctx.beginPath();
+    points.forEach(function (p, i) {
+        ctx.lineTo(p.x, p.y);
+        edges.push( [i, (i+1)%points.length ]);
+    });
+    ctx.closePath();
+    ctx.stroke();
+    var src = points.concat();
+
+    var Polygon = function(points, edges){
+        this.points = points;
+        this.edges = edges;
+        return this;
+    };
+
+    var solution = new Polygon([],[]);
+    var polygons = [
+        new Polygon( points, edges )
+    ];
+
+    var offset = 5;
+    var solutionLength = 0;
+    for( var i = 0; i < 300; i++ ){
+
+        var newPolygons = [];
+        var count = polygons.length;
+        for ( var j = 0; j < count; j++ ){
+
+            var poly = polygons[ j ];
+//            if( poly.edges.length <= 2 ){
+//                continue;
+//            }
+
+            offsetPolygon( poly, offset );
+
+            poly = collapse( poly );
+
+            if( poly == null )continue;
+
+            var splits = split( poly );
+            splits.forEach(function( newPolygon ){
+                newPolygons.push( newPolygon );
+            });
+
+
+        }
+
+        if( newPolygons.length == 0 ){
+            solution.edges = solution.edges.slice(0,solutionLength);
+            console.log( "over", i, solution.edges.length );
+            break;
+        }else{
+            solutionLength = solution.edges.length;
+            console.log( solution.edges.length );
+        }
+
+        polygons = newPolygons;
+
+
+//        if( i % 4 != 0 )continue;
+        var colors = ["#C00", "#0F9", "#09F", "#F90"];
+        polygons.forEach( function( poly, i ){
+
+            ctx.strokeStyle = colors[i % colors.length];
+            renderPoly(poly);
+
+        } );
+
+
+
+    }
+
+//    ctx.clearRect(0,0,w,h)
+    ctx.beginPath();
+    points.forEach(function (p, i) {
+        ctx.lineTo(p.x, p.y);
+    });
+    ctx.closePath();
+    ctx.stroke();
+    ctx.strokeStyle = "#000";
+    ctx.lineWidth = 3
+    renderPoly( solution );
+
+
+
+
+//        var poly = [];
+//        window.onmousedown = function(e){
+//            poly.push( [e.clientX, e.clientY] );
+//
+//            var str = "var points = ["
+//            ctx.strokeStyle = "#06C";
+//            ctx.beginPath();
+//            poly.forEach(function (v) {
+//                ctx.lineTo(v[0], v[1])
+//                str += "new Point(" + v[0] + ", " + v[1] + " ),";
+//            });
+//            ctx.stroke();
+//            str = str.substr(0,str.length - 1 ) + "];";
+//            console.clear();
+//            console.log( str );
+//
+//        };
+
+</script>
+
+</body>
+</html>
